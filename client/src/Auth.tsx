@@ -59,7 +59,7 @@ export default function Auth() {
           <div className="bg-blue-600 p-3 rounded-xl text-white mb-4 shadow-sm">
             <LayoutDashboard size={28} />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to TaskFlow</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome to De-Hassle</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 text-center">
             Enter your credentials to access your tasks.
           </p>
