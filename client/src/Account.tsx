@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from './supabaseClient'
 import type { Session } from '@supabase/supabase-js'
-import { Key, Shield, Smartphone, AlertCircle, CheckCircle2, Loader2, Copy, User } from 'lucide-react'
+import { Key, Shield, Smartphone, AlertCircle, CheckCircle2, Loader2, Copy, User, Trash2, Clock } from 'lucide-react'
 
 export default function Account({ session }: { session: Session }) {
   const [newPassword, setNewPassword] = useState('')
@@ -20,9 +21,32 @@ export default function Account({ session }: { session: Session }) {
   const [otp, setOtp] = useState<string[]>(Array(6).fill(''))
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
 
+  // --- Deletion State ---
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [deleteInput, setDeleteInput] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showGoodbye, setShowGoodbye] = useState(false)
+
   useEffect(() => {
     checkMfaStatus()
   }, [])
+
+  // Prevents background scrolling when any modal is open
+  useEffect(() => {
+    const scrollContainers = document.querySelectorAll('.overflow-y-auto')
+    if (isDeleteModalOpen || showGoodbye) {
+      document.body.style.overflow = 'hidden'
+      scrollContainers.forEach(el => (el as HTMLElement).style.overflow = 'hidden')
+    } else {
+      document.body.style.overflow = ''
+      scrollContainers.forEach(el => (el as HTMLElement).style.overflow = '')
+    }
+    
+    return () => {
+      document.body.style.overflow = ''
+      scrollContainers.forEach(el => (el as HTMLElement).style.overflow = '')
+    }
+  }, [isDeleteModalOpen, showGoodbye])
 
   const checkMfaStatus = async () => {
     const { data, error } = await supabase.auth.mfa.listFactors()
@@ -167,6 +191,52 @@ export default function Account({ session }: { session: Session }) {
     }
   }
 
+  // --- MODIFIED TO SCHEDULE SOFT DELETION ---
+  const handleDeleteAccount = async () => {
+    if (deleteInput !== 'DELETE') return
+    setIsDeleting(true)
+
+    try {
+      // Calculate a date 30 days from now
+      const deletionDate = new Date()
+      deletionDate.setDate(deletionDate.getDate() + 30)
+
+      // Store the scheduled deletion date in the user's metadata
+      const { error } = await supabase.auth.updateUser({
+        data: { deletion_scheduled_at: deletionDate.toISOString() }
+      })
+
+      if (error) throw error
+
+      setIsDeleteModalOpen(false)
+      setShowGoodbye(true)
+
+      // Hold the goodbye message for 4 seconds before kicking them to the login screen
+      setTimeout(async () => {
+        await supabase.auth.signOut()
+      }, 4000)
+
+    } catch (err) {
+      console.error(err)
+      setIsDeleting(false)
+    }
+  }
+
+  if (showGoodbye) {
+    return createPortal(
+      <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-[#FAFAFA] dark:bg-[#0A0A0A] p-4 animate-pop-in">
+        <div className="w-24 h-24 bg-blue-50 dark:bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mb-6 shadow-inner animate-pulse">
+          <Clock size={40} />
+        </div>
+        <h2 className="text-3xl font-black text-slate-900 dark:text-white mb-3 text-center">Account Scheduled for Deletion</h2>
+        <p className="text-slate-500 dark:text-slate-400 font-medium text-center max-w-sm">
+          You will be logged out shortly. Your account will be permanently deleted in 30 days. You can cancel this process anytime by logging back in.
+        </p>
+      </div>,
+      document.body
+    )
+  }
+
   return (
     <div className="max-w-3xl mx-auto pb-20 animate-slide-in">
       <div className="mb-6 md:mb-8">
@@ -231,7 +301,6 @@ export default function Account({ session }: { session: Session }) {
 
         {/* 2FA Security Card */}
         <div className="bg-white dark:bg-[#111111] p-5 md:p-8 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm relative overflow-hidden">
-          
           <div className="flex items-center justify-between mb-5 md:mb-6 relative z-10">
             <div className="flex items-center gap-3">
               <div className={`p-2 rounded-lg ${mfaEnabled ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 dark:text-emerald-400" : "bg-slate-100 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400"}`}>
@@ -331,14 +400,76 @@ export default function Account({ session }: { session: Session }) {
                       Cancel
                     </button>
                   </div>
-
                 </div>
               </div>
             </div>
           )}
         </div>
 
+        {/* --- DANGER ZONE --- */}
+        <div className="bg-rose-50/50 dark:bg-rose-900/5 p-5 md:p-8 rounded-2xl border border-rose-200 dark:border-rose-900/30 shadow-sm mt-12">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-rose-100 dark:bg-rose-500/10 p-2 rounded-lg text-rose-600 dark:text-rose-400">
+              <AlertCircle size={18} />
+            </div>
+            <h3 className="text-xs md:text-sm font-bold uppercase tracking-widest text-rose-600 dark:text-rose-400">Danger Zone</h3>
+          </div>
+          <p className="text-sm text-rose-800 dark:text-rose-300/80 mb-6 font-medium">
+            Deleting your account will schedule it for permanent removal in 30 days. You will lose access immediately.
+          </p>
+
+          <button 
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="px-6 py-2.5 md:py-3 w-full sm:w-auto border-2 border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/20 rounded-xl text-xs md:text-sm font-bold active:scale-95 transition-all flex items-center justify-center min-w-[160px]"
+          >
+            Delete Account
+          </button>
+        </div>
+
       </div>
+
+      {/* --- DELETE CONFIRMATION MODAL --- */}
+      {isDeleteModalOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" onClick={() => setIsDeleteModalOpen(false)} />
+          <div className="relative w-full max-w-md bg-white dark:bg-[#151515] border border-rose-200/60 dark:border-rose-900/30 rounded-3xl shadow-2xl p-6 sm:p-8 animate-pop-in overflow-hidden">
+            <div className="w-16 h-16 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Trash2 size={32} />
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mb-2 text-center">Delete Account?</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 font-medium text-center">
+              Your account will be deactivated immediately and permanently deleted in 30 days. 
+            </p>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block text-center">Type "DELETE" to confirm</label>
+                <input 
+                  type="text" 
+                  value={deleteInput} 
+                  onChange={(e) => setDeleteInput(e.target.value)} 
+                  placeholder="DELETE"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-[#0A0A0A] border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500/50 transition-all font-mono font-bold text-center"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <button 
+                  onClick={handleDeleteAccount}
+                  disabled={deleteInput !== 'DELETE' || isDeleting}
+                  className="flex items-center justify-center w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-sm font-bold shadow-md shadow-rose-500/20 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {isDeleting ? <Loader2 size={18} className="animate-spin" /> : 'Schedule Deletion'}
+                </button>
+                <button onClick={() => setIsDeleteModalOpen(false)} className="w-full py-3 font-bold text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

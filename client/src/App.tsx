@@ -7,7 +7,7 @@ import Account from './Account'
 import { 
   LogOut, Sun, Moon, LayoutDashboard, Menu, X, Inbox, CheckSquare, 
   List as ListIcon, Plus, Trash2, Edit2, Search, CalendarDays, 
-  CalendarClock, Calendar as CalendarIcon, GripVertical, Command, Activity, Settings, Loader2, ShieldAlert
+  CalendarClock, Calendar as CalendarIcon, GripVertical, Command, Activity, Settings, Loader2, ShieldAlert, RefreshCcw
 } from 'lucide-react'
 
 export interface ListType {
@@ -41,6 +41,11 @@ function App() {
   const [mfaError, setMfaError] = useState<string | null>(null)
   const [mfaLoading, setMfaLoading] = useState(false)
 
+  // --- Deletion State ---
+  const [isScheduledForDeletion, setIsScheduledForDeletion] = useState<boolean>(false)
+  const [deletionDate, setDeletionDate] = useState<string | null>(null)
+  const [isRestoring, setIsRestoring] = useState(false)
+
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false)
   const [activeListId, setActiveListId] = useState<number | 'default' | 'completed' | 'today' | 'upcoming' | 'calendar' | 'search' | 'dashboard' | 'account'>('default')
@@ -62,24 +67,34 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
-      if (session) checkMfaLevel()
+      if (session) checkUserStatus(session)
     })
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-      if (session) checkMfaLevel()
-      else setNeedsMfa(false)
+      if (session) checkUserStatus(session)
+      else {
+        setNeedsMfa(false)
+        setIsScheduledForDeletion(false)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
 
-  useEffect(() => {
-    if (session && !needsMfa) {
-      fetchLists()
+  // Checks both MFA and Deletion Status
+  const checkUserStatus = async (currentSession: Session) => {
+    // 1. Check Deletion Status
+    const deletionTimestamp = currentSession.user.user_metadata?.deletion_scheduled_at
+    if (deletionTimestamp) {
+      setIsScheduledForDeletion(true)
+      const dateObj = new Date(deletionTimestamp)
+      setDeletionDate(dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }))
+      return // Stop checking, they need to restore first
+    } else {
+      setIsScheduledForDeletion(false)
     }
-  }, [session, needsMfa])
 
-  const checkMfaLevel = async () => {
+    // 2. Check MFA Status
     const { data, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (error) return
 
@@ -92,6 +107,20 @@ function App() {
       }
     } else {
       setNeedsMfa(false)
+      fetchLists()
+    }
+  }
+
+  const handleRestoreAccount = async () => {
+    setIsRestoring(true)
+    const { error } = await supabase.auth.updateUser({
+      data: { deletion_scheduled_at: null }
+    })
+    
+    setIsRestoring(false)
+    if (!error) {
+      setIsScheduledForDeletion(false)
+      if (session) checkUserStatus(session) // Re-run checks to verify MFA and fetch lists
     }
   }
 
@@ -118,6 +147,7 @@ function App() {
       setMfaError("Invalid authenticator code.")
     } else {
       setNeedsMfa(false)
+      fetchLists()
     }
     setMfaLoading(false)
   }
@@ -133,7 +163,7 @@ function App() {
         return
       }
 
-      if (isInputFocused || needsMfa) return
+      if (isInputFocused || needsMfa || isScheduledForDeletion) return
 
       switch(e.key) {
         case '?': e.preventDefault(); setShowShortcutsModal(true); break;
@@ -150,10 +180,10 @@ function App() {
     
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [showShortcutsModal, needsMfa])
+  }, [showShortcutsModal, needsMfa, isScheduledForDeletion])
 
   const fetchLists = async () => {
-    if (!session || needsMfa) return
+    if (!session || needsMfa || isScheduledForDeletion) return
     const { data, error } = await supabase.from('lists').select('*').order('id', { ascending: true })
     if (error) return
 
@@ -243,7 +273,38 @@ function App() {
     localStorage.setItem(`list_order_${session.user.id}`, JSON.stringify(order))
   }
 
+  // --- RENDERING ROUTER ---
+
   if (!session) return <div className="min-h-screen font-sans"><Auth /></div>
+
+  if (isScheduledForDeletion) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#FAFAFA] dark:bg-[#0A0A0A] font-sans p-4">
+        <div className="w-full max-w-lg bg-white dark:bg-[#151515] border border-slate-200/60 dark:border-slate-800 rounded-3xl shadow-2xl p-8 sm:p-10 text-center animate-pop-in">
+          <div className="w-20 h-20 bg-blue-50 dark:bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+            <RefreshCcw size={36} />
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white mb-4 tracking-tight">Account Recovery</h2>
+          <p className="text-base text-slate-500 dark:text-slate-400 mb-8 font-medium leading-relaxed">
+            Your account is currently scheduled for permanent deletion on <span className="font-bold text-slate-700 dark:text-slate-200">{deletionDate}</span>. Would you like to restore your account and cancel the deletion?
+          </p>
+          
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={handleRestoreAccount}
+              disabled={isRestoring}
+              className="flex items-center justify-center w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-bold shadow-md shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50"
+            >
+              {isRestoring ? <Loader2 size={20} className="animate-spin" /> : 'Yes, Restore My Account'}
+            </button>
+            <button onClick={() => supabase.auth.signOut()} className="py-4 text-sm font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
+              No, keep it deleted (Log Out)
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (needsMfa) {
     return (
@@ -320,7 +381,7 @@ function App() {
             <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-blue-500/30">
               <LayoutDashboard size={20} strokeWidth={2.5} />
             </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400 tracking-tight">De-Hassle</h1>
+            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400 tracking-tight">TaskFlow</h1>
           </div>
           <button className="md:hidden p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" onClick={() => setIsSidebarOpen(false)}><X size={20} /></button>
         </div>
