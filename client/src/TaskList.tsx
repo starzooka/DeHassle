@@ -4,7 +4,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabaseClient'
 import { 
   Check, Trash2, Plus, Circle, CheckCircle2, Calendar, Clock, 
-  AlertCircle, Edit2, Filter, ArrowUpDown, List as ListIcon, 
+  AlertCircle, Filter, ArrowUpDown, List as ListIcon, 
   CheckSquare, Search, X, AlignLeft, CheckCircle, Hash, Timer, 
   Play, Pause, RotateCcw, Flame, Zap, Trophy, ChevronLeft, ChevronRight,
   BrainCircuit, TrendingUp, TrendingDown, Target, AlertTriangle, CheckSquare2
@@ -861,10 +861,6 @@ export default function TaskList({ session, activeListId, searchQuery, customLis
     if (!error) setTasks(tasks.filter(t => t.id !== id))
   }
 
-  const startEditingTask = (task: Task) => {
-    setEditingTaskId(task.id)
-    setEditTaskTitle(task.title)
-  }
 
   const saveEditedTask = async (id: number) => {
     if (!editTaskTitle.trim()) return
