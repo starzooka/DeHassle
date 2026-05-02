@@ -48,7 +48,10 @@ function App() {
 
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false)
-  const [activeListId, setActiveListId] = useState<number | 'default' | 'completed' | 'today' | 'upcoming' | 'calendar' | 'search' | 'dashboard' | 'account'>('default')
+  
+  // FIXED: Changed the default page to the Productivity Dashboard
+  const [activeListId, setActiveListId] = useState<number | 'default' | 'completed' | 'today' | 'upcoming' | 'calendar' | 'search' | 'dashboard' | 'account'>('dashboard')
+  
   const [searchQuery, setSearchQuery] = useState('')
   const [customLists, setCustomLists] = useState<ListType[]>([])
   const [newListName, setNewListName] = useState('')
@@ -65,9 +68,20 @@ function App() {
   }, [isDarkMode])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session) checkUserStatus(session)
+    // FIXED: Forces a server-side check. If an admin deletes the user from the database,
+    // this check will fail and instantly log them out on page load/refresh.
+    supabase.auth.getUser().then(({ data: { user }, error }) => {
+      if (error || !user) {
+        supabase.auth.signOut()
+        setSession(null)
+        return
+      }
+      
+      // If the user genuinely still exists on the server, fetch their local session
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setSession(session)
+        if (session) checkUserStatus(session)
+      })
     })
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
