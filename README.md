@@ -2,7 +2,7 @@
 
 **DeHassle** is a beautifully crafted, gamified, and highly secure productivity engine. Designed for professionals and students alike, it transforms standard task management into an engaging, data-rich experience that actively encourages deep work and consistent habits.
 
-![DeHassle Dashboard Demo](https://via.placeholder.com/1200x600.png?text=DeHassle+Productivity+Dashboard) *(Replace with a screenshot of your dashboard)*
+![DeHassle Dashboard](./image.png) *(Replace with a screenshot of your dashboard)*
 
 ## ✨ Key Features
 
